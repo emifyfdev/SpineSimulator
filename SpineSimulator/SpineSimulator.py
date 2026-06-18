@@ -21,6 +21,7 @@ from slicer.util import VTKObservationMixin
 
 import vtk
 import qt
+import ctk
 import numpy as np
 import re
 import copy
@@ -146,7 +147,7 @@ class FABRIKSolver:
 class SpineSimulatorV3:
 
     def __init__(self):
-        self.version        = "V3_60"
+        self.version        = "V4_1"
         self.scene          = slicer.mrmlScene
         self.model_nodes    = {}
         self.collision_model_nodes = {}
@@ -212,7 +213,7 @@ class SpineSimulatorV3:
         # la derecha de la pantalla para no tapar la anatomía. IMPORTANTE:
         # el movimiento matemático sigue usando el disco/fiducial real como pivot.
         self.native_handle_screen_offset_enabled = True
-        self.native_handle_screen_offset_mm = 65.0
+        self.native_handle_screen_offset_mm = 90.0
         self._native_interaction_display_node = None
         # Handle nativo único de Slicer: NO es un modelo/gizmo propio.
         # Es un vtkMRMLLinearTransformNode visible/interactivo, colocado exactamente
@@ -266,7 +267,7 @@ class SpineSimulatorV3:
         # Primero se usan bounds para descartar pares lejanos y solo después
         # distancia superficie-superficie para pintar contactos; el bloqueo es opcional.
         self.collision_enabled = True
-        self.collision_blocking_enabled = True
+        self.collision_blocking_enabled = False
         self.collision_margin_mm = 0.5
         self.collision_neighbor_radius = 1
         self.collision_max_sample_points = 600
@@ -2895,7 +2896,7 @@ class SpineSimulatorV3:
         self._panel = qt.QWidget()
         self._panel.setWindowTitle(f"SpineSimulator {self.version} - selección 3D + transformada nativa")
         self._panel.setMinimumWidth(390)
-        self._panel.resize(430, 760)
+        self._panel.resize(430, 1500)
         self._panel.setWindowFlags(qt.Qt.Window | qt.Qt.WindowStaysOnTopHint)
 
         # ------------------------------------------------------------------
@@ -2904,20 +2905,22 @@ class SpineSimulatorV3:
         # discos, exportación). En pantallas chicas el final quedaba fuera de
         # vista. Por eso todo el panel real vive dentro de un QScrollArea.
         # ------------------------------------------------------------------
-        outer = qt.QVBoxLayout(self._panel)
-        outer.setSpacing(0)
-        outer.setContentsMargins(0, 0, 0, 0)
+        # outer = qt.QVBoxLayout(self._panel)
+        # outer.setSpacing(0)
+        # outer.setContentsMargins(0, 0, 0, 0)
 
-        scroll = qt.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(qt.Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(qt.Qt.ScrollBarAsNeeded)
-        outer.addWidget(scroll)
+        # scroll = qt.QScrollArea()
+        # scroll.setWidgetResizable(True)
+        # scroll.setHorizontalScrollBarPolicy(qt.Qt.ScrollBarAlwaysOff)
+        # scroll.setVerticalScrollBarPolicy(qt.Qt.ScrollBarAsNeeded)
+        # outer.addWidget(scroll)
 
-        content = qt.QWidget()
-        scroll.setWidget(content)
+        # content = qt.QWidget()
+        # scroll.setWidget(content)
 
-        root = qt.QVBoxLayout(content)
+        # root = qt.QVBoxLayout(content)
+        root = qt.QVBoxLayout(self._panel)
+
         root.setSpacing(8)
         root.setContentsMargins(12, 12, 12, 12)
 
@@ -2951,7 +2954,15 @@ class SpineSimulatorV3:
         anchorLay.addRow(self._anchor_motion_check)
         root.addWidget(anchorBox)
 
-        # ── Rotación (control principal) ──
+        # ── Rotación + Traslación (collapsible button, collapsed by default) ──
+        advButton = ctk.ctkCollapsibleButton()
+        advButton.setText("Rotación + Traslación")
+        advButton.setExpanded(False)
+        advLay = qt.QVBoxLayout(advButton)
+        advLay.setSpacing(8)
+        advLay.setContentsMargins(8, 8, 8, 8)
+
+        # Rotación (dentro del collapsible)
         rotBox = qt.QGroupBox("Rotación (control principal)")
         rotLay = qt.QFormLayout(rotBox)
         self._rot_widgets = {}
@@ -2978,9 +2989,11 @@ class SpineSimulatorV3:
             row.addWidget(sb)
             rotLay.addRow(name, row)
             self._rot_widgets[key] = (sl, sb)
-        root.addWidget(rotBox)
+        advLay.addWidget(rotBox)
 
-        # ── Interacción 3D nativa de Slicer ──
+        # ── Interacción 3D nativa de Slicer (oculta) ──
+        # Creamos los widgets internamente para mantener compatibilidad,
+        # pero no los añadimos a la interfaz visual
         nativeBox = qt.QGroupBox("Interacción 3D nativa de transformada")
         nativeLay = qt.QFormLayout(nativeBox)
         self._native_interaction_check = qt.QCheckBox("Activar handle nativo EN el fiducial/disco de la vértebra seleccionada")
@@ -3020,9 +3033,8 @@ class SpineSimulatorV3:
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#777;font-size:11px")
         nativeLay.addRow(hint)
-        root.addWidget(nativeBox)
 
-        # ── Traslación (ajuste fino, colapsable) ──
+        # ── Traslación (ajuste fino, dentro del collapsible) ──
         transBox = qt.QGroupBox("Traslación — ajuste fino (mm)")
         transBox.setCheckable(True)
         transBox.setChecked(False)
@@ -3051,7 +3063,10 @@ class SpineSimulatorV3:
             row.addWidget(sb)
             transLay.addRow(name, row)
             self._trans_widgets[key] = (sl, sb)
-        root.addWidget(transBox)
+        advLay.addWidget(transBox)
+
+        # Agregar el collapsible button al root
+        root.addWidget(advButton)
 
         # Selector de rigidez eliminado: ocupaba pantalla y no era útil para el ajuste de pivotes.
 
@@ -3103,7 +3118,7 @@ class SpineSimulatorV3:
         colLay.addRow(self._collision_check)
 
         self._collision_blocking_check = qt.QCheckBox("Bloquear movimiento al colisionar")
-        self._collision_blocking_check.setChecked(self.collision_blocking_enabled)
+        self._collision_blocking_check.setChecked(False)
         self._collision_blocking_check.setToolTip("Apagado por defecto: las vértebras siguen su movimiento natural y solo se pinta la zona de contacto.")
         self._collision_blocking_check.toggled.connect(self._on_collision_blocking_changed)
         colLay.addRow(self._collision_blocking_check)
@@ -3133,9 +3148,7 @@ class SpineSimulatorV3:
         self._collision_heatmap_mode_combo.addItem("Superficie roja", "PATCH")
         self._collision_heatmap_mode_combo.addItem("Bolitas rojas", "SPHERES")
         self._collision_heatmap_mode_combo.addItem("Mapa de calor suave", "SURFACE")
-        mode = str(self.collision_heatmap_mode).upper()
-        mode_index = 2 if mode == "SURFACE" else (1 if mode == "SPHERES" else 0)
-        self._collision_heatmap_mode_combo.setCurrentIndex(mode_index)
+        self._collision_heatmap_mode_combo.setCurrentIndex(1)
         self._collision_heatmap_mode_combo.currentIndexChanged.connect(self._on_collision_heatmap_mode_changed)
         colLay.addRow("Visualizacion", self._collision_heatmap_mode_combo)
 
@@ -3173,7 +3186,9 @@ class SpineSimulatorV3:
         colLay.addRow(clearMarksBtn)
         root.addWidget(colBox)
 
-        # ── Osteotomía virtual ──
+        # ── Osteotomía virtual (oculta) ──
+        # Creamos los widgets internamente para mantener compatibilidad,
+        # pero no los añadimos a la interfaz visual
         ostBox = qt.QGroupBox("Osteotomía virtual VTP")
         ostLay = qt.QFormLayout(ostBox)
 
@@ -3226,8 +3241,6 @@ class SpineSimulatorV3:
         drillHint.setWordWrap(True)
         drillHint.setStyleSheet("color:#777;font-size:11px")
         ostLay.addRow(drillHint)
-
-        root.addWidget(ostBox)
 
         # ── Centros / pivotes anatómicos ──
         pivBox = qt.QGroupBox("Pivotes anatómicos")
@@ -4398,12 +4411,7 @@ Desarrollado sobre 3D Slicer. Basado en SpineSimulator V4_1.
 
 class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     """
-    Widget del módulo SpineSimulator.
-
-    Gestiona el ciclo de vida del simulador: inicio, parada y limpieza
-    al cerrar la escena. El panel de control del simulador se construye
-    dentro del panel lateral de Slicer (self.layout) en lugar de una
-    ventana flotante separada.
+ 
     """
 
     def __init__(self, parent=None):
@@ -4535,18 +4543,12 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         def _build_panel_embedded():
             """Versión embebida de _build_panel: usa el layout del módulo Slicer."""
 
-            # Scroll area para que el contenido no quede cortado
-            scroll = qt.QScrollArea()
-            scroll.setWidgetResizable(True)
-            scroll.setHorizontalScrollBarPolicy(qt.Qt.ScrollBarAlwaysOff)
-            scroll.setVerticalScrollBarPolicy(qt.Qt.ScrollBarAsNeeded)
-            container_layout.addWidget(scroll)
-
+            # Sin scroll area para que todo sea visible de una vez
             content = qt.QWidget()
-            scroll.setWidget(content)
             root = qt.QVBoxLayout(content)
             root.setSpacing(8)
             root.setContentsMargins(8, 8, 8, 8)
+            container_layout.addWidget(content)
 
             # ── Selector de vértebra activa ──
             selBox = qt.QGroupBox("Vértebra activa")
@@ -4577,7 +4579,15 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             anchorLay.addRow(sim._anchor_motion_check)
             root.addWidget(anchorBox)
 
-            # ── Rotación ──
+            # ── Rotación + Traslación (collapsible button, collapsed by default) ──
+            advButton = ctk.ctkCollapsibleButton()
+            advButton.setText("Rotación + Traslación")
+            advButton.collapsed =True
+            advLay = qt.QVBoxLayout(advButton)
+            advLay.setSpacing(8)
+            advLay.setContentsMargins(8, 8, 8, 8)
+
+            # Rotación (dentro del collapsible)
             rotBox = qt.QGroupBox("Rotación (control principal)")
             rotLay = qt.QFormLayout(rotBox)
             sim._rot_widgets = {}
@@ -4604,9 +4614,9 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 row.addWidget(sb)
                 rotLay.addRow(name, row)
                 sim._rot_widgets[key] = (sl, sb)
-            root.addWidget(rotBox)
+            advLay.addWidget(rotBox)
 
-            # ── Handle nativo ──
+            # ── Handle nativo (oculta) ──
             nativeBox = qt.QGroupBox("Interacción 3D nativa")
             nativeLay = qt.QFormLayout(nativeBox)
             sim._native_interaction_check = qt.QCheckBox("Activar handle nativo")
@@ -4636,9 +4646,8 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._native_handle_offset_spin.setValue(sim.native_handle_screen_offset_mm)
             sim._native_handle_offset_spin.valueChanged.connect(sim._on_native_handle_offset_changed)
             nativeLay.addRow("Offset derecha", sim._native_handle_offset_spin)
-            root.addWidget(nativeBox)
 
-            # ── Traslación ──
+            # ── Traslación (dentro del collapsible) ──
             transBox = qt.QGroupBox("Traslación — ajuste fino (mm)")
             transBox.setCheckable(True)
             transBox.setChecked(False)
@@ -4667,9 +4676,12 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 row.addWidget(sb)
                 transLay.addRow(name, row)
                 sim._trans_widgets[key] = (sl, sb)
-            root.addWidget(transBox)
+            advLay.addWidget(transBox)
 
-            # ── Dinámica ──
+            # Agregar el collapsible button al root
+            root.addWidget(advButton)
+
+            # ── Dinámica (oculta) ──
             dynBox = qt.QGroupBox("Dinámica distribuida")
             dynLay = qt.QFormLayout(dynBox)
             sim._dynamic_check = qt.QCheckBox("Mover vecinas al mover una vértebra")
@@ -4700,7 +4712,6 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._local_bend_spin.setValue(float(sim.local_bend_fraction))
             sim._local_bend_spin.valueChanged.connect(sim._on_local_bend_changed)
             dynLay.addRow("Curvatura local", sim._local_bend_spin)
-            root.addWidget(dynBox)
 
             # ── Colisiones ──
             colBox = qt.QGroupBox("Colisiones VTP")
@@ -4710,7 +4721,7 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._collision_check.toggled.connect(sim._on_collision_enabled_changed)
             colLay.addRow(sim._collision_check)
             sim._collision_blocking_check = qt.QCheckBox("Bloquear movimiento al colisionar")
-            sim._collision_blocking_check.setChecked(sim.collision_blocking_enabled)
+            sim._collision_blocking_check.setChecked(False)
             sim._collision_blocking_check.toggled.connect(sim._on_collision_blocking_changed)
             colLay.addRow(sim._collision_blocking_check)
             sim._collision_margin_spin = qt.QDoubleSpinBox()
@@ -4729,8 +4740,7 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._collision_heatmap_mode_combo.addItem("Superficie roja", "PATCH")
             sim._collision_heatmap_mode_combo.addItem("Bolitas rojas", "SPHERES")
             sim._collision_heatmap_mode_combo.addItem("Mapa de calor suave", "SURFACE")
-            mode_index = 2 if sim.collision_heatmap_mode == "SURFACE" else (1 if sim.collision_heatmap_mode == "SPHERES" else 0)
-            sim._collision_heatmap_mode_combo.setCurrentIndex(mode_index)
+            sim._collision_heatmap_mode_combo.setCurrentIndex(1)
             sim._collision_heatmap_mode_combo.currentIndexChanged.connect(sim._on_collision_heatmap_mode_changed)
             colLay.addRow("Visualización", sim._collision_heatmap_mode_combo)
             recalibBtn = qt.QPushButton("Recalibrar postura actual")
@@ -4741,7 +4751,7 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             colLay.addRow(clearBtn)
             root.addWidget(colBox)
 
-            # ── Osteotomía ──
+            # ── Osteotomía (oculta) ──
             ostBox = qt.QGroupBox("Osteotomía virtual VTP")
             ostLay = qt.QFormLayout(ostBox)
             sim._osteotomy_mouse_check = qt.QCheckBox("Modo broca con mouse")
@@ -4769,11 +4779,12 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             resetDrillBtn = qt.QPushButton("Revertir osteotomía activa")
             resetDrillBtn.clicked.connect(sim._on_osteotomy_reset_active)
             ostLay.addRow(resetDrillBtn)
-            root.addWidget(ostBox)
 
-            # ── Pivotes ──
-            pivBox = qt.QGroupBox("Pivotes anatómicos")
-            pivLay = qt.QFormLayout(pivBox)
+            # ── Pivotes (solo modo pivot en collapsible) ──
+            pivButton = ctk.ctkCollapsibleButton()
+            pivButton.setText("Modo pivot")
+            pivButton.collapsed =True
+            pivLay = qt.QFormLayout(pivButton)
             sim._pivot_mode_combo = qt.QComboBox()
             sim._pivot_mode_combo.addItem("Cuerpo vertebral por densidad (+Y anterior)", "BODY_DENSITY_POS_Y")
             sim._pivot_mode_combo.addItem("Cuerpo vertebral por densidad (-Y anterior)", "BODY_DENSITY_NEG_Y")
@@ -4782,31 +4793,36 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._pivot_mode_combo.addItem("Manual: usar fiduciales editables", "MANUAL_FIDUCIALS")
             sim._pivot_mode_combo.currentIndexChanged.connect(sim._on_pivot_mode_changed)
             pivLay.addRow("Modo pivot", sim._pivot_mode_combo)
+
+            # Otros controles de pivotes (ocultos)
+            pivBox = qt.QGroupBox("Pivotes anatómicos")
+            pivBoxLay = qt.QFormLayout(pivBox)
             sim._pivot_check = qt.QCheckBox("Mostrar centros de cuerpos Pivot_XX")
             sim._pivot_check.setChecked(sim.show_pivot_fiducials)
             sim._pivot_check.toggled.connect(sim._on_pivot_visibility_changed)
-            pivLay.addRow(sim._pivot_check)
+            pivBoxLay.addRow(sim._pivot_check)
             sim._disc_check = qt.QCheckBox("Mostrar discos Disc_XX_YY celestes")
             sim._disc_check.setChecked(sim.show_disc_fiducials)
             sim._disc_check.toggled.connect(sim._on_disc_visibility_changed)
-            pivLay.addRow(sim._disc_check)
+            pivBoxLay.addRow(sim._disc_check)
             sim._use_disc_check = qt.QCheckBox("Usar discos como pivots de movimiento")
             sim._use_disc_check.setChecked(sim.use_disc_pivots)
             sim._use_disc_check.toggled.connect(sim._on_use_disc_pivots_changed)
-            pivLay.addRow(sim._use_disc_check)
+            pivBoxLay.addRow(sim._use_disc_check)
             recalcDiscBtn = qt.QPushButton("Recalcular discos entre cuerpos")
             recalcDiscBtn.clicked.connect(sim._on_recalculate_discs_clicked)
-            pivLay.addRow(recalcDiscBtn)
+            pivBoxLay.addRow(recalcDiscBtn)
             useDiscBtn = qt.QPushButton("Activar discos actuales como pivots")
             useDiscBtn.clicked.connect(sim._on_use_current_discs_clicked)
-            pivLay.addRow(useDiscBtn)
+            pivBoxLay.addRow(useDiscBtn)
             recalcPivotBtn = qt.QPushButton("Recalcular centros automáticos")
             recalcPivotBtn.clicked.connect(sim._on_recalculate_pivots_clicked)
-            pivLay.addRow(recalcPivotBtn)
+            pivBoxLay.addRow(recalcPivotBtn)
             useManualBtn = qt.QPushButton("Aplicar Pivot_XX manuales")
             useManualBtn.clicked.connect(sim._on_use_fiducials_as_pivots_clicked)
-            pivLay.addRow(useManualBtn)
-            root.addWidget(pivBox)
+            pivBoxLay.addRow(useManualBtn)
+
+            root.addWidget(pivButton)
 
             # ── Botones finales ──
             btnRow = qt.QHBoxLayout()
@@ -4827,7 +4843,7 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
             # En la extensión NO se llama self._panel.show() porque el panel
             # vive dentro del layout del módulo de Slicer, no es una ventana flotante.
-            sim._panel = scroll  # referencia para compatibilidad con sim.stop()
+            sim._panel = content  # referencia para compatibilidad con sim.stop()
 
         # Monkey-patch: reemplazar _build_panel por la versión embebida
         import types
