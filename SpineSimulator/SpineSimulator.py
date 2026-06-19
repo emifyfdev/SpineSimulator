@@ -308,6 +308,7 @@ class SpineSimulatorV3:
 
         # Anotaciones Cobb 3D en tiempo real
         self._cobb_annotation_nodes = {}  # región -> nodo de anotación
+        self._cobb_angle_markups = {}  # región -> nodo de angle markup
         self.show_cobb_angles = True
 
     # ── Organización visual en Subject Hierarchy ─────────────────────────────
@@ -2357,18 +2358,19 @@ class SpineSimulatorV3:
     # ── Anotaciones Cobb 3D en tiempo real ────────────────────────────────────
 
     def _cobb_angle_from_labels(self, label_sup, label_mid, label_inf):
-        """Calcula ángulo Cobb entre 3 vértebras (superior, media, inferior)."""
+        """Calcula ángulo Cobb entre 3 vértebras usando posiciones transformadas."""
         if not all(l in self.ordered_labels for l in [label_sup, label_mid, label_inf]):
             return None
         try:
-            idx_sup = self.ordered_labels.index(label_sup)
-            idx_mid = self.ordered_labels.index(label_mid)
-            idx_inf = self.ordered_labels.index(label_inf)
-            if not all(idx in range(len(self.solver.pos)) for idx in [idx_sup, idx_mid, idx_inf]):
-                return None
-            pos_sup = np.array(self.solver.pos[idx_sup])
-            pos_mid = np.array(self.solver.pos[idx_mid])
-            pos_inf = np.array(self.solver.pos[idx_inf])
+            # Obtener posiciones transformadas (con matrices aplicadas)
+            m_sup = self._label_matrix_to_world(label_sup)
+            m_mid = self._label_matrix_to_world(label_mid)
+            m_inf = self._label_matrix_to_world(label_inf)
+
+            pos_sup = np.array([m_sup.GetElement(0, 3), m_sup.GetElement(1, 3), m_sup.GetElement(2, 3)])
+            pos_mid = np.array([m_mid.GetElement(0, 3), m_mid.GetElement(1, 3), m_mid.GetElement(2, 3)])
+            pos_inf = np.array([m_inf.GetElement(0, 3), m_inf.GetElement(1, 3), m_inf.GetElement(2, 3)])
+
             v1 = pos_sup - pos_mid
             v2 = pos_inf - pos_mid
             denom = np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-8
@@ -2381,27 +2383,73 @@ class SpineSimulatorV3:
             return None
 
     def _update_cobb_annotations(self):
-        """Imprime los ángulos Cobb en consola mientras se mueven las vértebras."""
+        """Actualiza ángulos Cobb: imprime en consola y en markup 3D."""
         if not self.ordered_labels or not self.solver:
             return
-        angle_c = self._cobb_angle_from_labels("C1", "C4", "C7")
-        angle_t = self._cobb_angle_from_labels("T1", "T6", "T12")
-        angle_l = self._cobb_angle_from_labels("L1", "L3", "L5")
 
-        msg = "Cobb: "
-        parts = []
-        if angle_c is not None:
-            parts.append(f"C={angle_c:.1f}°")
-        if angle_t is not None:
-            parts.append(f"T={angle_t:.1f}°")
-        if angle_l is not None:
-            parts.append(f"L={angle_l:.1f}°")
-        if parts:
-            print(msg + " | ".join(parts))
+        regions = {
+            "cervical": ("C1", "C4", "C7"),
+            "thoracic": ("T1", "T6", "T12"),
+            "lumbar": ("L1", "L3", "L5"),
+        }
+
+        msg_parts = []
+        for region, (l_sup, l_mid, l_inf) in regions.items():
+            try:
+                angle = self._cobb_angle_from_labels(l_sup, l_mid, l_inf)
+                if angle is not None:
+                    msg_parts.append(f"{region[0].upper()}={angle:.1f}°")
+                    self._update_angle_markup(region, l_sup, l_mid, l_inf, angle)
+            except Exception:
+                pass
+
+        if msg_parts:
+            print("Cobb: " + " | ".join(msg_parts))
+
+    def _update_angle_markup(self, region, label_sup, label_mid, label_inf, angle_deg):
+        """Crea o actualiza un angle markup 3D para visualizar el ángulo Cobb."""
+        try:
+            if region not in self._cobb_angle_markups:
+                # Crear nuevo angle markup
+                node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsAngleNode")
+                if not node:
+                    return
+                node.SetName(f"Cobb_{region}")
+                self._add_node_to_scene_folder(node, "fiducials")
+                node.GetDisplayNode().SetSelectedColor(0.2, 0.8, 1.0)
+                node.GetDisplayNode().SetTextScale(3.0)
+                self._cobb_angle_markups[region] = node
+            else:
+                node = self._cobb_angle_markups[region]
+
+            # Obtener posiciones transformadas de las 3 vértebras
+            m_sup = self._label_matrix_to_world(label_sup)
+            m_mid = self._label_matrix_to_world(label_mid)
+            m_inf = self._label_matrix_to_world(label_inf)
+
+            pos_sup = [m_sup.GetElement(0, 3), m_sup.GetElement(1, 3), m_sup.GetElement(2, 3)]
+            pos_mid = [m_mid.GetElement(0, 3), m_mid.GetElement(1, 3), m_mid.GetElement(2, 3)]
+            pos_inf = [m_inf.GetElement(0, 3), m_inf.GetElement(1, 3), m_inf.GetElement(2, 3)]
+
+            # Establecer puntos del markup
+            node.RemoveAllControlPoints()
+            node.AddControlPoint(pos_sup)
+            node.AddControlPoint(pos_mid)
+            node.AddControlPoint(pos_inf)
+            node.SetMeasurement(angle_deg)
+        except Exception:
+            pass
 
     def _cleanup_cobb_annotations(self):
         """Limpia las anotaciones Cobb al cerrar."""
         self._cobb_annotation_nodes.clear()
+        for node in self._cobb_angle_markups.values():
+            try:
+                if self.scene.GetNodeByID(node.GetID()):
+                    self.scene.RemoveNode(node)
+            except Exception:
+                pass
+        self._cobb_angle_markups.clear()
 
     # ── Osteotomía virtual VTP ───────────────────────────────────────────────
 
@@ -4093,6 +4141,7 @@ class SpineSimulatorV3:
                 return
             self._sync_rot_sliders()
             self._sync_trans_sliders()
+            self._update_cobb_annotations()
             if not self._last_collision:
                 mode = "rot+trasl" if not self.native_rotation_only else "rotación"
                 self._update_status(f"Handle 3D: {label} {mode}")
