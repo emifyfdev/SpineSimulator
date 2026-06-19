@@ -24,12 +24,11 @@ import qt
 import ctk
 import numpy as np
 import re
-import copy
 import tempfile
 import time
 import csv
 from functools import partial
-
+# slicer.app.pythonConsole().clear()
 
 # ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -213,7 +212,7 @@ class SpineSimulatorV3:
         # la derecha de la pantalla para no tapar la anatomía. IMPORTANTE:
         # el movimiento matemático sigue usando el disco/fiducial real como pivot.
         self.native_handle_screen_offset_enabled = True
-        self.native_handle_screen_offset_mm = 90.0
+        self.native_handle_screen_offset_mm = 65.0
         self._native_interaction_display_node = None
         # Handle nativo único de Slicer: NO es un modelo/gizmo propio.
         # Es un vtkMRMLLinearTransformNode visible/interactivo, colocado exactamente
@@ -306,6 +305,11 @@ class SpineSimulatorV3:
         self._osteotomy_cut_count = {}
         self._sh_root_folder_id = None
         self._sh_folder_ids = {}
+
+        # Anotaciones Cobb 3D en tiempo real
+        self._cobb_annotation_nodes = {}  # región -> nodo de anotación
+        self._cobb_angle_markups = {}  # región -> nodo de angle markup
+        self.show_cobb_angles = True
 
     # ── Organización visual en Subject Hierarchy ─────────────────────────────
 
@@ -404,6 +408,7 @@ class SpineSimulatorV3:
         self._cleanup_rotation_gizmo()
         self._cleanup_pivot_fiducials()
         self._cleanup_disc_fiducials()
+        self._cleanup_cobb_annotations()
         self._cleanup_transforms()
         self._cleanup_converted_vtp_nodes()
         self._restore_original_model_visibility()
@@ -1517,14 +1522,6 @@ class SpineSimulatorV3:
         cache[label] = out
         return out
 
-    def _sample_polydata_points(self, poly):
-        n = poly.GetNumberOfPoints() if poly else 0
-        if n <= 0:
-            return []
-        max_points = max(50, int(self.collision_max_sample_points))
-        step = max(1, int(np.ceil(float(n) / float(max_points))))
-        return [poly.GetPoint(i) for i in range(0, n, step)]
-
     def _directed_surface_distance(self, sample_poly, target_poly):
         if not sample_poly or not target_poly:
             return None
@@ -1617,21 +1614,6 @@ class SpineSimulatorV3:
                     pairs.add(self._pair_key(label, other))
         return sorted(pairs, key=lambda p: (self.ordered_labels.index(p[0]), self.ordered_labels.index(p[1])))
 
-    def _collision_probe_labels(self, moved_labels):
-        """Amplía la zona revisada a vecinos craneales y caudales.
-
-        La cinemática puede arrastrar principalmente hacia arriba, pero el contacto
-        anatómico relevante puede ocurrir también contra la vértebra inferior.
-        """
-        labels = [l for l in moved_labels if l in self.ordered_labels]
-        radius = max(1, int(self.collision_neighbor_radius))
-        probe = set(labels)
-        for label in labels:
-            idx = self.ordered_labels.index(label)
-            for j in range(max(0, idx - radius), min(len(self.ordered_labels) - 1, idx + radius) + 1):
-                probe.add(self.ordered_labels[j])
-        return sorted(probe, key=lambda l: self.ordered_labels.index(l))
-
     def _calibrate_collision_baseline(self):
         """Registra contactos ya presentes al inicio para no bloquear ni repintar la postura base."""
         self._sync_osteotomy_collision_proxies()
@@ -1661,10 +1643,6 @@ class SpineSimulatorV3:
                 return info
         self._last_collision = None
         return None
-
-    def _find_current_contact_after_move(self, moved_labels):
-        hits = self._find_current_contacts_after_move(moved_labels)
-        return hits[0] if hits else None
 
     def _find_current_contacts_after_move(self, moved_labels):
         if not self.collision_enabled:
@@ -2053,13 +2031,6 @@ class SpineSimulatorV3:
         self._collision_heat_labels.add(label)
         return overlay
 
-    def _apply_collision_heatmap(self, hit):
-        if not self.collision_heatmap_enabled or not hit:
-            return
-        cache = {}
-        self._apply_collision_heat_to_label(hit["a"], hit["b"], cache)
-        self._apply_collision_heat_to_label(hit["b"], hit["a"], cache)
-
     def _apply_collision_heatmaps(self, hits):
         if not self.collision_heatmap_enabled or not hits:
             return
@@ -2295,6 +2266,7 @@ class SpineSimulatorV3:
         moved = ", ".join([f"{l}({w:.2f})" for l, d, w in influenced])
         if not self._last_collision:
             self._update_status(f"Movimiento armónico desde {label}: {moved} | sin contacto")
+        self._update_cobb_annotations()
 
     def apply_translation(self, label, dx=0.0, dy=0.0, dz=0.0):
         """Traslación manual distribuida a vecinas.
@@ -2352,6 +2324,7 @@ class SpineSimulatorV3:
         moved = ", ".join([f"{l}({w:.2f})" for l, d, w in influenced])
         if not self._last_collision:
             self._update_status(f"Traslación armónica desde {label}: {moved} | sin contacto")
+        self._update_cobb_annotations()
 
     def reset_vertebra(self, label):
         self._sync_osteotomy_collision_proxies()
@@ -2381,6 +2354,137 @@ class SpineSimulatorV3:
         self._calibrate_collision_baseline()
         self._reset_widgets()
         print(f"[SpineSimulator {self.version}] Columna restaurada.")
+
+    # ── Anotaciones Cobb 3D en tiempo real ────────────────────────────────────
+
+    def _cobb_angle_from_labels(self, label_sup, label_mid, label_inf):
+        """Calcula ángulo Cobb entre 3 vértebras usando posiciones transformadas."""
+        if not all(l in self.ordered_labels for l in [label_sup, label_mid, label_inf]):
+            return None
+        try:
+            # Obtener posiciones transformadas (con matrices aplicadas)
+            m_sup = self._label_matrix_to_world(label_sup)
+            m_mid = self._label_matrix_to_world(label_mid)
+            m_inf = self._label_matrix_to_world(label_inf)
+
+            pos_sup = np.array([m_sup.GetElement(0, 3), m_sup.GetElement(1, 3), m_sup.GetElement(2, 3)])
+            pos_mid = np.array([m_mid.GetElement(0, 3), m_mid.GetElement(1, 3), m_mid.GetElement(2, 3)])
+            pos_inf = np.array([m_inf.GetElement(0, 3), m_inf.GetElement(1, 3), m_inf.GetElement(2, 3)])
+
+            v1 = pos_sup - pos_mid
+            v2 = pos_inf - pos_mid
+            denom = np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-8
+            cos_angle = np.dot(v1, v2) / denom
+            cos_angle = np.clip(cos_angle, -1.0, 1.0)
+            angle_rad = np.arccos(cos_angle)
+            angle_deg = np.degrees(angle_rad)
+            return angle_deg
+        except Exception:
+            return None
+
+    def _update_cobb_annotations(self):
+        """Actualiza ángulos Cobb: imprime en consola y en markup 3D."""
+        if not self.ordered_labels or not self.solver:
+            return
+
+        regions = {
+            "cervical": ("C2", "C4", "C7"),
+            "thoracic": ("T1", "T6", "T12"),
+            "lumbar": ("L1", "L3", "L5"),
+        }
+
+        msg_parts = []
+        for region, (l_sup, l_mid, l_inf) in regions.items():
+            try:
+                angle = self._cobb_angle_from_labels(l_sup, l_mid, l_inf)
+                if angle is not None:
+                    msg_parts.append(f"{region[0].upper()}={angle:.1f}°")
+                    self._update_angle_markup(region, l_sup, l_mid, l_inf, angle)
+            except Exception:
+                pass
+
+
+    def _get_surface_point_on_vertebra(self, label, position="top"):
+        """Obtiene punto en la cara superior o inferior de una vértebra."""
+        try:
+            if label not in self.model_nodes:
+                return None
+            poly = self.model_nodes[label].GetPolyData()
+            if not poly or poly.GetNumberOfPoints() == 0:
+                return None
+
+            m = self._label_matrix_to_world(label)
+            pts = self._polydata_points_numpy(poly)
+
+            if position == "top":
+                idx = np.argmax(pts[:, 2])  # Z máximo
+            else:  # "bottom"
+                idx = np.argmin(pts[:, 2])  # Z mínimo
+
+            pt_local = pts[idx]
+
+            # Transformar al espacio world
+            x = float(m.GetElement(0, 0)) * pt_local[0] + float(m.GetElement(0, 1)) * pt_local[1] + float(m.GetElement(0, 2)) * pt_local[2] + float(m.GetElement(0, 3))
+            y = float(m.GetElement(1, 0)) * pt_local[0] + float(m.GetElement(1, 1)) * pt_local[1] + float(m.GetElement(1, 2)) * pt_local[2] + float(m.GetElement(1, 3))
+            z = float(m.GetElement(2, 0)) * pt_local[0] + float(m.GetElement(2, 1)) * pt_local[1] + float(m.GetElement(2, 2)) * pt_local[2] + float(m.GetElement(2, 3))
+
+            return np.array([x, y, z])
+        except Exception:
+            return None
+
+    def _update_angle_markup(self, region, label_sup, label_mid, label_inf, angle_deg):
+        """Crea o actualiza angle markup usando los pivot fiducials."""
+        try:
+            if region not in self._cobb_angle_markups:
+                node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsAngleNode")
+                if not node:
+                    return
+                node.SetName(f"Cobb_{region}")
+                self._add_node_to_scene_folder(node, "fiducials")
+                dn = node.GetDisplayNode()
+                if dn:
+                    dn.SetSelectedColor(0.2, 0.8, 1.0)
+                    dn.SetTextScale(3.0)
+                    dn.SetLineWidth(2.5)
+                self._cobb_angle_markups[region] = node
+            else:
+                node = self._cobb_angle_markups[region]
+
+            # Para cervical: usar caras superior/inferior; para otros: usar pivots
+            if region == "cervical":
+                pos_sup = self._get_surface_point_on_vertebra(label_sup, "bottom")
+                pos_inf = self._get_surface_point_on_vertebra(label_inf, "bottom")
+                offset_direction = np.array([0.0, -1.0, 0.0])  # posterior (-Y)
+            else:
+                pos_sup = self._get_current_pivot_world(label_sup)
+                pos_inf = self._get_current_pivot_world(label_inf)
+                offset_direction = np.array([0.0, 1.0, 0.0])  # anterior (+Y)
+
+            pos_mid = self._get_current_pivot_world(label_mid)
+
+            if all(p is not None for p in [pos_sup, pos_mid, pos_inf]):
+                # Agregar offset a punto medio para visualizar mejor el ángulo
+                pos_mid_arr = np.array(pos_mid)
+                pos_mid_offset = pos_mid_arr + offset_direction * 100.0  # 100mm de offset
+
+                node.RemoveAllControlPoints()
+                node.AddControlPoint(pos_sup)
+                node.AddControlPoint(pos_mid_offset.tolist())
+                node.AddControlPoint(pos_inf)
+                node.SetMeasurement(angle_deg)
+        except Exception:
+            pass
+
+    def _cleanup_cobb_annotations(self):
+        """Limpia las anotaciones Cobb al cerrar."""
+        self._cobb_annotation_nodes.clear()
+        for node in self._cobb_angle_markups.values():
+            try:
+                if self.scene.GetNodeByID(node.GetID()):
+                    self.scene.RemoveNode(node)
+            except Exception:
+                pass
+        self._cobb_angle_markups.clear()
 
     # ── Osteotomía virtual VTP ───────────────────────────────────────────────
 
@@ -3246,6 +3350,11 @@ class SpineSimulatorV3:
         pivBox = qt.QGroupBox("Pivotes anatómicos")
         pivLay = qt.QFormLayout(pivBox)
 
+        self._cobb_method_combo = qt.QComboBox()
+        self._cobb_method_combo.addItem("Puntos inferiores C2/C7")
+        self._cobb_method_combo.addItem("Pivots")
+        pivLay.addRow("Cobb cervical", self._cobb_method_combo)
+
         self._pivot_mode_combo = qt.QComboBox()
         self._pivot_mode_combo.addItem("Cuerpo vertebral por densidad (+Y anterior)", "BODY_DENSITY_POS_Y")
         self._pivot_mode_combo.addItem("Cuerpo vertebral por densidad (-Y anterior)", "BODY_DENSITY_NEG_Y")
@@ -4072,6 +4181,7 @@ class SpineSimulatorV3:
                 return
             self._sync_rot_sliders()
             self._sync_trans_sliders()
+            self._update_cobb_annotations()
             if not self._last_collision:
                 mode = "rot+trasl" if not self.native_rotation_only else "rotación"
                 self._update_status(f"Handle 3D: {label} {mode}")
@@ -4397,7 +4507,7 @@ class SpineSimulator(ScriptedLoadableModule):
         self.parent.title = "Spine Simulator"
         self.parent.categories = ["MOBI"]
         self.parent.dependencies = []
-        self.parent.contributors = ["SpineSimulator Development Team"]
+        self.parent.contributors = ["Ferre y Ferre, Emiliano", "Ariata, Valeria", "Cerrillo, Malaquias", "Servicio de Traumatologia y Ortopedia - Hospital El Cruce"]
         self.parent.helpText = """
 Simulador de cirugía de columna vertebral para 3D Slicer.
 Permite mover segmentaciones vertebrales con cinemática inversa FABRIK,
@@ -4540,6 +4650,7 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         container_layout = self.simPanelContainerLayout
         sim = self._sim
 
+        # ACA SE EDITA EL PANEL
         def _build_panel_embedded():
             """Versión embebida de _build_panel: usa el layout del módulo Slicer."""
 
