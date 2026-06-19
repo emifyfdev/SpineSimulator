@@ -2388,7 +2388,7 @@ class SpineSimulatorV3:
             return
 
         regions = {
-            "cervical": ("C1", "C4", "C7"),
+            "cervical": ("C2", "C4", "C7"),
             "thoracic": ("T1", "T6", "T12"),
             "lumbar": ("L1", "L3", "L5"),
         }
@@ -2403,8 +2403,34 @@ class SpineSimulatorV3:
             except Exception:
                 pass
 
-        if msg_parts:
-            print("Cobb: " + " | ".join(msg_parts))
+
+    def _get_surface_point_on_vertebra(self, label, position="top"):
+        """Obtiene punto en la cara superior o inferior de una vértebra."""
+        try:
+            if label not in self.model_nodes:
+                return None
+            poly = self.model_nodes[label].GetPolyData()
+            if not poly or poly.GetNumberOfPoints() == 0:
+                return None
+
+            m = self._label_matrix_to_world(label)
+            pts = self._polydata_points_numpy(poly)
+
+            if position == "top":
+                idx = np.argmax(pts[:, 2])  # Z máximo
+            else:  # "bottom"
+                idx = np.argmin(pts[:, 2])  # Z mínimo
+
+            pt_local = pts[idx]
+
+            # Transformar al espacio world
+            x = float(m.GetElement(0, 0)) * pt_local[0] + float(m.GetElement(0, 1)) * pt_local[1] + float(m.GetElement(0, 2)) * pt_local[2] + float(m.GetElement(0, 3))
+            y = float(m.GetElement(1, 0)) * pt_local[0] + float(m.GetElement(1, 1)) * pt_local[1] + float(m.GetElement(1, 2)) * pt_local[2] + float(m.GetElement(1, 3))
+            z = float(m.GetElement(2, 0)) * pt_local[0] + float(m.GetElement(2, 1)) * pt_local[1] + float(m.GetElement(2, 2)) * pt_local[2] + float(m.GetElement(2, 3))
+
+            return np.array([x, y, z])
+        except Exception:
+            return None
 
     def _update_angle_markup(self, region, label_sup, label_mid, label_inf, angle_deg):
         """Crea o actualiza angle markup usando los pivot fiducials."""
@@ -2424,15 +2450,21 @@ class SpineSimulatorV3:
             else:
                 node = self._cobb_angle_markups[region]
 
-            # Usar los pivot fiducials ya posicionados
-            pos_sup = self._get_current_pivot_world(label_sup)
+            # Para cervical: usar caras superior/inferior; para otros: usar pivots
+            if region == "cervical":
+                pos_sup = self._get_surface_point_on_vertebra(label_sup, "bottom")
+                pos_inf = self._get_surface_point_on_vertebra(label_inf, "bottom")
+                offset_direction = np.array([0.0, -1.0, 0.0])  # posterior (-Y)
+            else:
+                pos_sup = self._get_current_pivot_world(label_sup)
+                pos_inf = self._get_current_pivot_world(label_inf)
+                offset_direction = np.array([0.0, 1.0, 0.0])  # anterior (+Y)
+
             pos_mid = self._get_current_pivot_world(label_mid)
-            pos_inf = self._get_current_pivot_world(label_inf)
 
             if all(p is not None for p in [pos_sup, pos_mid, pos_inf]):
                 # Agregar offset a punto medio para visualizar mejor el ángulo
                 pos_mid_arr = np.array(pos_mid)
-                offset_direction = np.array([0.0, 1.0, 0.0])  # anterior (Y)
                 pos_mid_offset = pos_mid_arr + offset_direction * 100.0  # 100mm de offset
 
                 node.RemoveAllControlPoints()
@@ -3317,6 +3349,11 @@ class SpineSimulatorV3:
         # ── Centros / pivotes anatómicos ──
         pivBox = qt.QGroupBox("Pivotes anatómicos")
         pivLay = qt.QFormLayout(pivBox)
+
+        self._cobb_method_combo = qt.QComboBox()
+        self._cobb_method_combo.addItem("Puntos inferiores C2/C7")
+        self._cobb_method_combo.addItem("Pivots")
+        pivLay.addRow("Cobb cervical", self._cobb_method_combo)
 
         self._pivot_mode_combo = qt.QComboBox()
         self._pivot_mode_combo.addItem("Cuerpo vertebral por densidad (+Y anterior)", "BODY_DENSITY_POS_Y")
