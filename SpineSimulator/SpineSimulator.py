@@ -2430,9 +2430,14 @@ class SpineSimulatorV3:
             pos_inf = self._get_current_pivot_world(label_inf)
 
             if all(p is not None for p in [pos_sup, pos_mid, pos_inf]):
+                # Agregar offset a punto medio para visualizar mejor el ángulo
+                pos_mid_arr = np.array(pos_mid)
+                offset_direction = np.array([0.0, 1.0, 0.0])  # anterior (Y)
+                pos_mid_offset = pos_mid_arr + offset_direction * 10.0  # 10mm de offset
+
                 node.RemoveAllControlPoints()
                 node.AddControlPoint(pos_sup)
-                node.AddControlPoint(pos_mid)
+                node.AddControlPoint(pos_mid_offset.tolist())
                 node.AddControlPoint(pos_inf)
                 node.SetMeasurement(angle_deg)
         except Exception:
