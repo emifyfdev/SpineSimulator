@@ -1517,14 +1517,6 @@ class SpineSimulatorV3:
         cache[label] = out
         return out
 
-    def _sample_polydata_points(self, poly):
-        n = poly.GetNumberOfPoints() if poly else 0
-        if n <= 0:
-            return []
-        max_points = max(50, int(self.collision_max_sample_points))
-        step = max(1, int(np.ceil(float(n) / float(max_points))))
-        return [poly.GetPoint(i) for i in range(0, n, step)]
-
     def _directed_surface_distance(self, sample_poly, target_poly):
         if not sample_poly or not target_poly:
             return None
@@ -1617,21 +1609,6 @@ class SpineSimulatorV3:
                     pairs.add(self._pair_key(label, other))
         return sorted(pairs, key=lambda p: (self.ordered_labels.index(p[0]), self.ordered_labels.index(p[1])))
 
-    def _collision_probe_labels(self, moved_labels):
-        """Amplía la zona revisada a vecinos craneales y caudales.
-
-        La cinemática puede arrastrar principalmente hacia arriba, pero el contacto
-        anatómico relevante puede ocurrir también contra la vértebra inferior.
-        """
-        labels = [l for l in moved_labels if l in self.ordered_labels]
-        radius = max(1, int(self.collision_neighbor_radius))
-        probe = set(labels)
-        for label in labels:
-            idx = self.ordered_labels.index(label)
-            for j in range(max(0, idx - radius), min(len(self.ordered_labels) - 1, idx + radius) + 1):
-                probe.add(self.ordered_labels[j])
-        return sorted(probe, key=lambda l: self.ordered_labels.index(l))
-
     def _calibrate_collision_baseline(self):
         """Registra contactos ya presentes al inicio para no bloquear ni repintar la postura base."""
         self._sync_osteotomy_collision_proxies()
@@ -1661,10 +1638,6 @@ class SpineSimulatorV3:
                 return info
         self._last_collision = None
         return None
-
-    def _find_current_contact_after_move(self, moved_labels):
-        hits = self._find_current_contacts_after_move(moved_labels)
-        return hits[0] if hits else None
 
     def _find_current_contacts_after_move(self, moved_labels):
         if not self.collision_enabled:
@@ -2052,13 +2025,6 @@ class SpineSimulatorV3:
         self._collision_overlay_nodes.append(overlay)
         self._collision_heat_labels.add(label)
         return overlay
-
-    def _apply_collision_heatmap(self, hit):
-        if not self.collision_heatmap_enabled or not hit:
-            return
-        cache = {}
-        self._apply_collision_heat_to_label(hit["a"], hit["b"], cache)
-        self._apply_collision_heat_to_label(hit["b"], hit["a"], cache)
 
     def _apply_collision_heatmaps(self, hits):
         if not self.collision_heatmap_enabled or not hits:
