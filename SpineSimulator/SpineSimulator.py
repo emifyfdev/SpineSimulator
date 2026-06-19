@@ -213,7 +213,7 @@ class SpineSimulatorV3:
         # la derecha de la pantalla para no tapar la anatomía. IMPORTANTE:
         # el movimiento matemático sigue usando el disco/fiducial real como pivot.
         self.native_handle_screen_offset_enabled = True
-        self.native_handle_screen_offset_mm = 90.0
+        self.native_handle_screen_offset_mm = 65.0
         self._native_interaction_display_node = None
         # Handle nativo único de Slicer: NO es un modelo/gizmo propio.
         # Es un vtkMRMLLinearTransformNode visible/interactivo, colocado exactamente
@@ -4397,7 +4397,7 @@ class SpineSimulator(ScriptedLoadableModule):
         self.parent.title = "Spine Simulator"
         self.parent.categories = ["MOBI"]
         self.parent.dependencies = []
-        self.parent.contributors = ["SpineSimulator Development Team"]
+        self.parent.contributors = ["Ferre y Ferre, Emiliano", "Ariata, Valeria", "Cerrillo, Malaquias", "Servicio de Traumatologia y Ortopedia - Hospital El Cruce"]
         self.parent.helpText = """
 Simulador de cirugía de columna vertebral para 3D Slicer.
 Permite mover segmentaciones vertebrales con cinemática inversa FABRIK,
