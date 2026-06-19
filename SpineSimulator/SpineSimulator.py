@@ -2433,7 +2433,7 @@ class SpineSimulatorV3:
                 # Agregar offset a punto medio para visualizar mejor el ángulo
                 pos_mid_arr = np.array(pos_mid)
                 offset_direction = np.array([0.0, 1.0, 0.0])  # anterior (Y)
-                pos_mid_offset = pos_mid_arr + offset_direction * 10.0  # 10mm de offset
+                pos_mid_offset = pos_mid_arr + offset_direction * 100.0  # 100mm de offset
 
                 node.RemoveAllControlPoints()
                 node.AddControlPoint(pos_sup)
