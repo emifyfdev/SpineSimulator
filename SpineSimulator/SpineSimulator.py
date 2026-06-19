@@ -2407,7 +2407,7 @@ class SpineSimulatorV3:
             print("Cobb: " + " | ".join(msg_parts))
 
     def _update_angle_markup(self, region, label_sup, label_mid, label_inf, angle_deg):
-        """Crea o actualiza un angle markup 3D en los centros transformados de las vértebras."""
+        """Crea o actualiza un angle markup 3D con puntos proyectados desde vértebras."""
         try:
             if region not in self._cobb_angle_markups:
                 node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsAngleNode")
@@ -2424,19 +2424,27 @@ class SpineSimulatorV3:
             else:
                 node = self._cobb_angle_markups[region]
 
-            # Usar centros transformados de las vértebras
+            # Obtener centros transformados
             m_sup = self._label_matrix_to_world(label_sup)
             m_mid = self._label_matrix_to_world(label_mid)
             m_inf = self._label_matrix_to_world(label_inf)
 
-            pos_sup = [float(m_sup.GetElement(0, 3)), float(m_sup.GetElement(1, 3)), float(m_sup.GetElement(2, 3))]
-            pos_mid = [float(m_mid.GetElement(0, 3)), float(m_mid.GetElement(1, 3)), float(m_mid.GetElement(2, 3))]
-            pos_inf = [float(m_inf.GetElement(0, 3)), float(m_inf.GetElement(1, 3)), float(m_inf.GetElement(2, 3))]
+            center_sup = np.array([m_sup.GetElement(0, 3), m_sup.GetElement(1, 3), m_sup.GetElement(2, 3)])
+            center_mid = np.array([m_mid.GetElement(0, 3), m_mid.GetElement(1, 3), m_mid.GetElement(2, 3)])
+            center_inf = np.array([m_inf.GetElement(0, 3), m_inf.GetElement(1, 3), m_inf.GetElement(2, 3)])
+
+            # Proyectar puntos en dirección anterior (Y) para separación visual
+            offset = 8.0  # mm de proyección
+            direction = np.array([0.0, 1.0, 0.0])
+
+            pos_sup = center_sup + direction * offset
+            pos_mid = center_mid
+            pos_inf = center_inf - direction * offset
 
             node.RemoveAllControlPoints()
-            node.AddControlPoint(pos_sup)
-            node.AddControlPoint(pos_mid)
-            node.AddControlPoint(pos_inf)
+            node.AddControlPoint(pos_sup.tolist())
+            node.AddControlPoint(pos_mid.tolist())
+            node.AddControlPoint(pos_inf.tolist())
             node.SetMeasurement(angle_deg)
         except Exception:
             pass
