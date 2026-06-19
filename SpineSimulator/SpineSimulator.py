@@ -24,12 +24,11 @@ import qt
 import ctk
 import numpy as np
 import re
-import copy
 import tempfile
 import time
 import csv
 from functools import partial
-
+# slicer.app.pythonConsole().clear()
 
 # ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -307,6 +306,10 @@ class SpineSimulatorV3:
         self._sh_root_folder_id = None
         self._sh_folder_ids = {}
 
+        # Anotaciones Cobb 3D en tiempo real
+        self._cobb_annotation_nodes = {}  # región -> nodo de anotación
+        self.show_cobb_angles = True
+
     # ── Organización visual en Subject Hierarchy ─────────────────────────────
 
     def _subject_hierarchy_node(self):
@@ -404,6 +407,7 @@ class SpineSimulatorV3:
         self._cleanup_rotation_gizmo()
         self._cleanup_pivot_fiducials()
         self._cleanup_disc_fiducials()
+        self._cleanup_cobb_annotations()
         self._cleanup_transforms()
         self._cleanup_converted_vtp_nodes()
         self._restore_original_model_visibility()
@@ -2261,6 +2265,7 @@ class SpineSimulatorV3:
         moved = ", ".join([f"{l}({w:.2f})" for l, d, w in influenced])
         if not self._last_collision:
             self._update_status(f"Movimiento armónico desde {label}: {moved} | sin contacto")
+        self._update_cobb_annotations()
 
     def apply_translation(self, label, dx=0.0, dy=0.0, dz=0.0):
         """Traslación manual distribuida a vecinas.
@@ -2318,6 +2323,7 @@ class SpineSimulatorV3:
         moved = ", ".join([f"{l}({w:.2f})" for l, d, w in influenced])
         if not self._last_collision:
             self._update_status(f"Traslación armónica desde {label}: {moved} | sin contacto")
+        self._update_cobb_annotations()
 
     def reset_vertebra(self, label):
         self._sync_osteotomy_collision_proxies()
@@ -2347,6 +2353,55 @@ class SpineSimulatorV3:
         self._calibrate_collision_baseline()
         self._reset_widgets()
         print(f"[SpineSimulator {self.version}] Columna restaurada.")
+
+    # ── Anotaciones Cobb 3D en tiempo real ────────────────────────────────────
+
+    def _cobb_angle_from_labels(self, label_sup, label_mid, label_inf):
+        """Calcula ángulo Cobb entre 3 vértebras (superior, media, inferior)."""
+        if not all(l in self.ordered_labels for l in [label_sup, label_mid, label_inf]):
+            return None
+        try:
+            idx_sup = self.ordered_labels.index(label_sup)
+            idx_mid = self.ordered_labels.index(label_mid)
+            idx_inf = self.ordered_labels.index(label_inf)
+            if not all(idx in range(len(self.solver.pos)) for idx in [idx_sup, idx_mid, idx_inf]):
+                return None
+            pos_sup = np.array(self.solver.pos[idx_sup])
+            pos_mid = np.array(self.solver.pos[idx_mid])
+            pos_inf = np.array(self.solver.pos[idx_inf])
+            v1 = pos_sup - pos_mid
+            v2 = pos_inf - pos_mid
+            denom = np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-8
+            cos_angle = np.dot(v1, v2) / denom
+            cos_angle = np.clip(cos_angle, -1.0, 1.0)
+            angle_rad = np.arccos(cos_angle)
+            angle_deg = np.degrees(angle_rad)
+            return angle_deg
+        except Exception:
+            return None
+
+    def _update_cobb_annotations(self):
+        """Imprime los ángulos Cobb en consola mientras se mueven las vértebras."""
+        if not self.ordered_labels or not self.solver:
+            return
+        angle_c = self._cobb_angle_from_labels("C1", "C4", "C7")
+        angle_t = self._cobb_angle_from_labels("T1", "T6", "T12")
+        angle_l = self._cobb_angle_from_labels("L1", "L3", "L5")
+
+        msg = "Cobb: "
+        parts = []
+        if angle_c is not None:
+            parts.append(f"C={angle_c:.1f}°")
+        if angle_t is not None:
+            parts.append(f"T={angle_t:.1f}°")
+        if angle_l is not None:
+            parts.append(f"L={angle_l:.1f}°")
+        if parts:
+            print(msg + " | ".join(parts))
+
+    def _cleanup_cobb_annotations(self):
+        """Limpia las anotaciones Cobb al cerrar."""
+        self._cobb_annotation_nodes.clear()
 
     # ── Osteotomía virtual VTP ───────────────────────────────────────────────
 
@@ -4506,6 +4561,7 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         container_layout = self.simPanelContainerLayout
         sim = self._sim
 
+        # ACA SE EDITA EL PANEL
         def _build_panel_embedded():
             """Versión embebida de _build_panel: usa el layout del módulo Slicer."""
 
