@@ -2406,31 +2406,10 @@ class SpineSimulatorV3:
         if msg_parts:
             print("Cobb: " + " | ".join(msg_parts))
 
-    def _get_vertebra_surface_point(self, label, direction_offset=None):
-        """Obtiene un punto en la superficie visible de una vértebra para el markup."""
-        try:
-            m = self._label_matrix_to_world(label)
-            center = np.array([m.GetElement(0, 3), m.GetElement(1, 3), m.GetElement(2, 3)])
-
-            # Obtener polydata para calcular offset hacia la superficie
-            if label in self.model_nodes:
-                poly = self.model_nodes[label].GetPolyData()
-                if poly:
-                    bounds = [0] * 6
-                    poly.GetBounds(bounds)
-                    # Usar punto anterior (hacia Y) como punto visible
-                    offset = np.array([0, (bounds[3] - bounds[2]) * 0.3, 0])
-                    return center + offset
-
-            return center
-        except Exception:
-            return None
-
     def _update_angle_markup(self, region, label_sup, label_mid, label_inf, angle_deg):
-        """Crea o actualiza un angle markup 3D para visualizar el ángulo Cobb."""
+        """Crea o actualiza un angle markup 3D en los centros transformados de las vértebras."""
         try:
             if region not in self._cobb_angle_markups:
-                # Crear nuevo angle markup
                 node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsAngleNode")
                 if not node:
                     return
@@ -2440,23 +2419,25 @@ class SpineSimulatorV3:
                 if dn:
                     dn.SetSelectedColor(0.2, 0.8, 1.0)
                     dn.SetTextScale(3.0)
-                    dn.SetLineWidth(2.0)
+                    dn.SetLineWidth(2.5)
                 self._cobb_angle_markups[region] = node
             else:
                 node = self._cobb_angle_markups[region]
 
-            # Obtener puntos en la superficie de cada vértebra
-            pos_sup = self._get_vertebra_surface_point(label_sup)
-            pos_mid = self._get_vertebra_surface_point(label_mid)
-            pos_inf = self._get_vertebra_surface_point(label_inf)
+            # Usar centros transformados de las vértebras
+            m_sup = self._label_matrix_to_world(label_sup)
+            m_mid = self._label_matrix_to_world(label_mid)
+            m_inf = self._label_matrix_to_world(label_inf)
 
-            if all(p is not None for p in [pos_sup, pos_mid, pos_inf]):
-                # Establecer puntos del markup
-                node.RemoveAllControlPoints()
-                node.AddControlPoint(pos_sup)
-                node.AddControlPoint(pos_mid)
-                node.AddControlPoint(pos_inf)
-                node.SetMeasurement(angle_deg)
+            pos_sup = [float(m_sup.GetElement(0, 3)), float(m_sup.GetElement(1, 3)), float(m_sup.GetElement(2, 3))]
+            pos_mid = [float(m_mid.GetElement(0, 3)), float(m_mid.GetElement(1, 3)), float(m_mid.GetElement(2, 3))]
+            pos_inf = [float(m_inf.GetElement(0, 3)), float(m_inf.GetElement(1, 3)), float(m_inf.GetElement(2, 3))]
+
+            node.RemoveAllControlPoints()
+            node.AddControlPoint(pos_sup)
+            node.AddControlPoint(pos_mid)
+            node.AddControlPoint(pos_inf)
+            node.SetMeasurement(angle_deg)
         except Exception:
             pass
 
