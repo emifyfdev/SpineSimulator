@@ -310,6 +310,18 @@ class SpineSimulatorV3:
         self._cobb_annotation_nodes = {}  # región -> nodo de anotación
         self._cobb_angle_markups = {}  # región -> nodo de angle markup
         self.show_cobb_angles = True
+        # Vértebras (superior, intermedia, inferior) usadas para cada ángulo.
+        # Editable desde la UI; estos son los valores por defecto.
+        self._cobb_regions = {
+            "cervical": ["C2", "C4", "C7"],
+            "thoracic": ["T1", "T6", "T12"],
+            "lumbar":   ["L1", "L3", "L5"],
+        }
+
+        # Movimiento aislado: si está activo, solo se mueve la vértebra
+        # seleccionada (alcance dinámico forzado a 0) sin tocar el resto.
+        self.isolated_movement_enabled = False
+        self._influence_radius_before_isolation = None
 
     # ── Organización visual en Subject Hierarchy ─────────────────────────────
 
@@ -2387,14 +2399,12 @@ class SpineSimulatorV3:
         if not self.ordered_labels or not self.solver:
             return
 
-        regions = {
-            "cervical": ("C2", "C4", "C7"),
-            "thoracic": ("T1", "T6", "T12"),
-            "lumbar": ("L1", "L3", "L5"),
-        }
+        if not self.show_cobb_angles:
+            self._clear_angle_markups()
+            return
 
         msg_parts = []
-        for region, (l_sup, l_mid, l_inf) in regions.items():
+        for region, (l_sup, l_mid, l_inf) in self._cobb_regions.items():
             try:
                 angle = self._cobb_angle_from_labels(l_sup, l_mid, l_inf)
                 if angle is not None:
@@ -2475,9 +2485,8 @@ class SpineSimulatorV3:
         except Exception:
             pass
 
-    def _cleanup_cobb_annotations(self):
-        """Limpia las anotaciones Cobb al cerrar."""
-        self._cobb_annotation_nodes.clear()
+    def _clear_angle_markups(self):
+        """Quita los markups 3D de ángulo Cobb sin tocar otros datos."""
         for node in self._cobb_angle_markups.values():
             try:
                 if self.scene.GetNodeByID(node.GetID()):
@@ -2485,6 +2494,11 @@ class SpineSimulatorV3:
             except Exception:
                 pass
         self._cobb_angle_markups.clear()
+
+    def _cleanup_cobb_annotations(self):
+        """Limpia las anotaciones Cobb al cerrar."""
+        self._cobb_annotation_nodes.clear()
+        self._clear_angle_markups()
 
     # ── Osteotomía virtual VTP ───────────────────────────────────────────────
 
@@ -3189,6 +3203,12 @@ class SpineSimulatorV3:
         self._radius_spin.valueChanged.connect(self._on_influence_radius_changed)
         dynLay.addRow("Alcance", self._radius_spin)
 
+        self._isolated_movement_check = qt.QCheckBox("Mover SOLO la vértebra seleccionada")
+        self._isolated_movement_check.setChecked(self.isolated_movement_enabled)
+        self._isolated_movement_check.setToolTip("Evita que el movimiento se propague a las vecinas: fuerza el alcance a 0 niveles.")
+        self._isolated_movement_check.toggled.connect(self._on_isolated_movement_changed)
+        dynLay.addRow(self._isolated_movement_check)
+
         self._decay_spin = qt.QDoubleSpinBox()
         self._decay_spin.setRange(0.0, 1.0)
         self._decay_spin.setSingleStep(0.05)
@@ -3401,6 +3421,9 @@ class SpineSimulatorV3:
 
         root.addWidget(pivBox)
 
+        # ── Ángulo de Cobb ──
+        root.addWidget(self._create_cobb_groupbox())
+
         # ── Botones ──
         btnRow = qt.QHBoxLayout()
         for txt, fn in [("Reset vértebra", self._on_reset_active),
@@ -3590,6 +3613,26 @@ class SpineSimulatorV3:
         self.influence_radius = int(value)
         self._update_status(f"Alcance dinámico: {self.influence_radius} niveles")
 
+    def _on_isolated_movement_changed(self, checked):
+        """Activa/desactiva mover SOLO la vértebra seleccionada.
+
+        Al activarlo, fuerza el alcance dinámico a 0 (sin contagio a vecinas)
+        y restaura el valor previo del usuario al desactivarlo.
+        """
+        self.isolated_movement_enabled = bool(checked)
+        if self.isolated_movement_enabled:
+            self._influence_radius_before_isolation = int(self.influence_radius)
+            self.influence_radius = 0
+        else:
+            if self._influence_radius_before_isolation is not None:
+                self.influence_radius = self._influence_radius_before_isolation
+                self._influence_radius_before_isolation = None
+        if hasattr(self, "_radius_spin") and self._radius_spin is not None:
+            self._radius_spin.setValue(int(self.influence_radius))
+            self._radius_spin.setEnabled(not self.isolated_movement_enabled)
+        modo = "solo la vértebra seleccionada" if self.isolated_movement_enabled else f"{self.influence_radius} niveles de alcance"
+        self._update_status(f"Movimiento: {modo}")
+
     def _on_influence_decay_changed(self, value):
         self.influence_decay = float(value)
         self._update_status(f"Peso vecina: {self.influence_decay:.2f}")
@@ -3599,6 +3642,54 @@ class SpineSimulatorV3:
         modo = "cadena craneal tipo huesos" if self.kinematic_chain_enabled else "rotación local/distribuida clásica"
         self._apply_all_transforms()
         self._update_status(f"Modo de movimiento: {modo}")
+
+    def _on_show_cobb_changed(self, checked):
+        self.show_cobb_angles = bool(checked)
+        if self.show_cobb_angles:
+            self._update_cobb_annotations()
+        else:
+            self._clear_angle_markups()
+        self._update_status("Ángulos de Cobb visibles" if self.show_cobb_angles else "Ángulos de Cobb ocultos")
+
+    def _on_cobb_region_changed(self, region, role_idx, label):
+        self._cobb_regions[region][role_idx] = label
+        self._update_cobb_annotations()
+
+    def _create_cobb_groupbox(self):
+        """Crea (o reutiliza) el panel de control de los ángulos de Cobb.
+
+        Permite mostrar/ocultar la medición y elegir qué vértebras
+        (superior, intermedia, inferior) definen el ángulo de cada región.
+        """
+        box = qt.QGroupBox("Ángulo de Cobb")
+        lay = qt.QFormLayout(box)
+
+        show_check = qt.QCheckBox("Mostrar ángulos de Cobb")
+        show_check.setChecked(self.show_cobb_angles)
+        show_check.toggled.connect(self._on_show_cobb_changed)
+        lay.addRow(show_check)
+        self._cobb_show_check = show_check
+
+        self._cobb_region_combos = {}
+        role_names = ["Superior", "Media", "Inferior"]
+        for region, labels in self._cobb_regions.items():
+            row = qt.QHBoxLayout()
+            combos = []
+            for role_idx, role_name in enumerate(role_names):
+                combo = qt.QComboBox()
+                for v in VERTEBRA_ORDER:
+                    combo.addItem(v)
+                current = labels[role_idx]
+                if current in VERTEBRA_ORDER:
+                    combo.setCurrentIndex(VERTEBRA_ORDER.index(current))
+                combo.currentTextChanged.connect(partial(self._on_cobb_region_changed, region, role_idx))
+                combo.setToolTip(role_name)
+                row.addWidget(combo)
+                combos.append(combo)
+            self._cobb_region_combos[region] = combos
+            lay.addRow(region.capitalize(), row)
+
+        return box
 
     def _on_local_bend_changed(self, value):
         self.local_bend_fraction = float(value)
@@ -4805,6 +4896,11 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._radius_spin.setSuffix(" niveles")
             sim._radius_spin.valueChanged.connect(sim._on_influence_radius_changed)
             dynLay.addRow("Alcance", sim._radius_spin)
+            sim._isolated_movement_check = qt.QCheckBox("Mover SOLO la vértebra seleccionada")
+            sim._isolated_movement_check.setChecked(sim.isolated_movement_enabled)
+            sim._isolated_movement_check.setToolTip("Evita que el movimiento se propague a las vecinas: fuerza el alcance a 0 niveles.")
+            sim._isolated_movement_check.toggled.connect(sim._on_isolated_movement_changed)
+            dynLay.addRow(sim._isolated_movement_check)
             sim._decay_spin = qt.QDoubleSpinBox()
             sim._decay_spin.setRange(0.0, 1.0)
             sim._decay_spin.setSingleStep(0.05)
@@ -4823,6 +4919,7 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._local_bend_spin.setValue(float(sim.local_bend_fraction))
             sim._local_bend_spin.valueChanged.connect(sim._on_local_bend_changed)
             dynLay.addRow("Curvatura local", sim._local_bend_spin)
+            root.addWidget(dynBox)
 
             # ── Colisiones ──
             colBox = qt.QGroupBox("Colisiones VTP")
@@ -4934,6 +5031,9 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             pivBoxLay.addRow(useManualBtn)
 
             root.addWidget(pivButton)
+
+            # ── Ángulo de Cobb ──
+            root.addWidget(sim._create_cobb_groupbox())
 
             # ── Botones finales ──
             btnRow = qt.QHBoxLayout()
