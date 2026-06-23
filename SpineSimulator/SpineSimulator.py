@@ -310,7 +310,7 @@ class SpineSimulatorV3:
         # Anotaciones Cobb 3D en tiempo real
         self._cobb_annotation_nodes = {}  # región -> nodo de anotación
         self._cobb_angle_markups = {}  # región -> nodo de angle markup
-        self.show_cobb_angles = True
+        self.show_cobb_angles = False
         # Vértebras (superior, intermedia, inferior) usadas para cada ángulo.
         # Editable desde la UI; estos son los valores por defecto.
         self._cobb_regions = {
