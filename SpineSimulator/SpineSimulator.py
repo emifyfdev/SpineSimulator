@@ -275,7 +275,7 @@ class SpineSimulatorV3:
         self.collision_proxy_reduction = 0.85
         self.collision_heatmap_max_points = 900
         self.collision_heatmap_enabled = True
-        self.collision_heatmap_mode = "PATCH"  # PATCH, SPHERES o SURFACE
+        self.collision_heatmap_mode = "SPHERES"  # PATCH, SPHERES o SURFACE
         self.collision_heatmap_radius_mm = 3.0
         self._collision_baseline_pairs = {}
         self._last_collision = None
@@ -2018,7 +2018,8 @@ class SpineSimulatorV3:
         for heat, _idx, pos in hot:
             sphere = vtk.vtkSphereSource()
             sphere.SetCenter(float(pos[0]), float(pos[1]), float(pos[2]))
-            sphere.SetRadius(0.45 + 0.75 * float(heat))
+            sphere.SetRadius((0.45 + 1.0 * float(heat)))
+            print(sphere.GetRadius())
             sphere.SetThetaResolution(8)
             sphere.SetPhiResolution(8)
             sphere.Update()
@@ -3638,6 +3639,7 @@ class SpineSimulatorV3:
             self._radius_spin.setEnabled(not self.isolated_movement_enabled)
         modo = "solo la vértebra seleccionada" if self.isolated_movement_enabled else f"{self.influence_radius} niveles de alcance"
         self._update_status(f"Movimiento: {modo}")
+        print(modo)
 
     def _on_influence_decay_changed(self, value):
         self.influence_decay = float(value)
@@ -4951,10 +4953,10 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._collision_heatmap_check.toggled.connect(sim._on_collision_heatmap_changed)
             colLay.addRow(sim._collision_heatmap_check)
             sim._collision_heatmap_mode_combo = qt.QComboBox()
-            sim._collision_heatmap_mode_combo.addItem("Superficie roja", "PATCH")
             sim._collision_heatmap_mode_combo.addItem("Bolitas rojas", "SPHERES")
+            sim._collision_heatmap_mode_combo.addItem("Superficie roja", "PATCH")
             sim._collision_heatmap_mode_combo.addItem("Mapa de calor suave", "SURFACE")
-            sim._collision_heatmap_mode_combo.setCurrentIndex(1)
+            sim._collision_heatmap_mode_combo.setCurrentIndex(0)
             sim._collision_heatmap_mode_combo.currentIndexChanged.connect(sim._on_collision_heatmap_mode_changed)
             colLay.addRow("Visualización", sim._collision_heatmap_mode_combo)
             recalibBtn = qt.QPushButton("Recalibrar postura actual")
