@@ -2406,6 +2406,9 @@ class SpineSimulatorV3:
         if not self.ordered_labels or not self.solver:
             return
 
+        # Actualizar label C2-C7 SIEMPRE (independiente de show_cobb_angles)
+        self._update_c2_c7_label()
+
         if not self.show_cobb_angles:
             self._clear_angle_markups()
             return
@@ -2469,7 +2472,7 @@ class SpineSimulatorV3:
 
             # Para cervical: usar caras superior/inferior; para otros: usar pivots
             if region == "cervical":
-                pos_sup = self._get_surface_point_on_vertebra(label_sup, "bottom")
+                pos_sup = self._get_surface_point_on_vertebra(label_sup, "top")
                 pos_inf = self._get_surface_point_on_vertebra(label_inf, "bottom")
                 offset_direction = np.array([0.0, -1.0, 0.0])  # posterior (-Y)
             else:
@@ -2501,6 +2504,36 @@ class SpineSimulatorV3:
             except Exception:
                 pass
         self._cobb_angle_markups.clear()
+
+    def _update_c2_c7_label(self):
+        """Actualiza el label con el ángulo C2-C7 (con offset -100mm en Y, como el markup)."""
+        try:
+            if not hasattr(self, '_cobb_c2_c7_label') or not self._cobb_c2_c7_label:
+                return
+
+            # Obtener puntos (igual que _update_angle_markup cervical)
+            pos_sup = self._get_surface_point_on_vertebra("C2", "top")
+            pos_mid = self._get_current_pivot_world("C4")
+            pos_inf = self._get_surface_point_on_vertebra("C7", "bottom")
+
+            if all(p is not None for p in [pos_sup, pos_mid, pos_inf]):
+                # Aplicar offset -100mm en Y (posterior), como hace el markup
+                pos_mid_offset = np.array(pos_mid) + np.array([0.0, -100.0, 0.0])
+
+                v1 = np.array(pos_sup) - pos_mid_offset
+                v2 = np.array(pos_inf) - pos_mid_offset
+                denom = np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-8
+                cos_angle = np.dot(v1, v2) / denom
+                cos_angle = np.clip(cos_angle, -1.0, 1.0)
+                angle_rad = np.arccos(cos_angle)
+                angle_deg = np.degrees(angle_rad)
+                angle_deg = min(abs(angle_deg), 180.0 - abs(angle_deg))
+
+                self._cobb_c2_c7_label.setText(f"C2-C7: {angle_deg:.1f}°")
+            else:
+                self._cobb_c2_c7_label.setText("C2-C7: --°")
+        except Exception:
+            self._cobb_c2_c7_label.setText("C2-C7: ERROR")
 
     def _cleanup_cobb_annotations(self):
         """Limpia las anotaciones Cobb al cerrar."""
@@ -3210,12 +3243,6 @@ class SpineSimulatorV3:
         self._radius_spin.valueChanged.connect(self._on_influence_radius_changed)
         dynLay.addRow("Alcance", self._radius_spin)
 
-        self._isolated_movement_check = qt.QCheckBox("Mover SOLO la vértebra seleccionada")
-        self._isolated_movement_check.setChecked(self.isolated_movement_enabled)
-        self._isolated_movement_check.setToolTip("Evita que el movimiento se propague a las vecinas: fuerza el alcance a 0 niveles.")
-        self._isolated_movement_check.toggled.connect(self._on_isolated_movement_changed)
-        dynLay.addRow(self._isolated_movement_check)
-
         self._decay_spin = qt.QDoubleSpinBox()
         self._decay_spin.setRange(0.0, 1.0)
         self._decay_spin.setSingleStep(0.05)
@@ -3677,6 +3704,11 @@ class SpineSimulatorV3:
         show_check.toggled.connect(self._on_show_cobb_changed)
         lay.addRow(show_check)
         self._cobb_show_check = show_check
+
+        # Label para ángulo C2-C7 (dinámico, solo texto)
+        self._cobb_c2_c7_label = qt.QLabel("C2-C7: --°")
+        self._cobb_c2_c7_label.setStyleSheet("font-weight: bold; color: #0066CC;")
+        lay.addRow("Cervical fijo:", self._cobb_c2_c7_label)
 
         self._cobb_region_combos = {}
         role_names = ["Superior", "Media", "Inferior"]
@@ -4606,7 +4638,7 @@ class SpineSimulator(ScriptedLoadableModule):
         self.parent.title = "Spine Simulator"
         self.parent.categories = ["MOBI"]
         self.parent.dependencies = []
-        self.parent.contributors = ["Ferre y Ferre, Emiliano", "Ariata, Valeria", "Cerrillo, Malaquias", "Servicio de Traumatologia y Ortopedia - Hospital El Cruce"]
+        self.parent.contributors = ["Ferre y Ferre, Emiliano", "Ariata, Valeria", "Ramanzin, Federico", "Servicio de Traumatologia y Ortopedia - Hospital El Cruce"]
         self.parent.helpText = """
 Simulador de cirugía de columna vertebral para 3D Slicer.
 Permite mover segmentaciones vertebrales con cinemática inversa FABRIK,
@@ -4904,11 +4936,6 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._radius_spin.setSuffix(" niveles")
             sim._radius_spin.valueChanged.connect(sim._on_influence_radius_changed)
             dynLay.addRow("Alcance", sim._radius_spin)
-            sim._isolated_movement_check = qt.QCheckBox("Mover SOLO la vértebra seleccionada")
-            sim._isolated_movement_check.setChecked(sim.isolated_movement_enabled)
-            sim._isolated_movement_check.setToolTip("Evita que el movimiento se propague a las vecinas: fuerza el alcance a 0 niveles.")
-            sim._isolated_movement_check.toggled.connect(sim._on_isolated_movement_changed)
-            dynLay.addRow(sim._isolated_movement_check)
             sim._decay_spin = qt.QDoubleSpinBox()
             sim._decay_spin.setRange(0.0, 1.0)
             sim._decay_spin.setSingleStep(0.05)
