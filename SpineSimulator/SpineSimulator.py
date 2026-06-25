@@ -146,7 +146,7 @@ class FABRIKSolver:
 class SpineSimulatorV3:
 
     def __init__(self):
-        self.version        = "V4_1"
+        self.version        = "V5.1.0"
         self.scene          = slicer.mrmlScene
         self.model_nodes    = {}
         self.collision_model_nodes = {}
@@ -402,10 +402,10 @@ class SpineSimulatorV3:
         self._install_click_observer()
         self._paint_all_normal()
         self._update_native_transform_interaction()
-        print(f"\n[SpineSimulator {self.version}] Listo.")
-        print("  → Click en vértebra 3D para seleccionar")
-        print("  → Rotación como movimiento principal, traslación disponible")
-        print("  → V39: drill continuo manteniendo click y arrastrando")
+        # print(f"\n[SpineSimulator {self.version}] Listo.")
+        # print("  → Click en vértebra 3D para seleccionar")
+        # print("  → Rotación como movimiento principal, traslación disponible")
+        # print("  → V39: drill continuo manteniendo click y arrastrando")
 
     def stop(self):
         self._remove_click_observer()
@@ -470,7 +470,7 @@ class SpineSimulatorV3:
 
         print(f"\n[SpineSimulator {self.version}] {len(self.ordered_labels)} vértebras: "
               + " → ".join(self.ordered_labels))
-        print(f"  Ancla inicial: {self.anchor_label}")
+        # print(f"  Ancla inicial: {self.anchor_label}")
 
         # Conversión previa: antes de crear transforms, solver y panel.
         # Desde este punto el simulador usa las copias VTP, no los nodos STL/originales.
@@ -656,7 +656,7 @@ class SpineSimulatorV3:
             except Exception:
                 pass
             self.collision_model_nodes[label] = node
-            print(f"  Proxy colisión {label}: {visual.GetPolyData().GetNumberOfPoints()} pts → {proxy_poly.GetNumberOfPoints()} pts")
+            # print(f"  Proxy colisión {label}: {visual.GetPolyData().GetNumberOfPoints()} pts → {proxy_poly.GetNumberOfPoints()} pts")
 
     def _write_vtp(self, polydata, filepath):
         writer = vtk.vtkXMLPolyDataWriter()
@@ -682,7 +682,7 @@ class SpineSimulatorV3:
         converted = {}
         self.converted_vtp_paths = {}
 
-        print(f"  Convirtiendo modelos a VTP en: {folder}")
+        print(f"Convirtiendo modelos a VTP en: {folder}")
 
         for label in self.ordered_labels:
             src = original_nodes[label]
@@ -723,15 +723,15 @@ class SpineSimulatorV3:
 
             converted[label] = new_node
             self.converted_vtp_paths[label] = path
-            print(f"  {label}: {poly.GetNumberOfPoints()} pts / {poly.GetNumberOfCells()} celdas"
-                  f" → VTP {vtp_poly.GetNumberOfPoints()} pts / {vtp_poly.GetNumberOfCells()} celdas")
+            # print(f"  {label}: {poly.GetNumberOfPoints()} pts / {poly.GetNumberOfCells()} celdas"
+            #       f" → VTP {vtp_poly.GetNumberOfPoints()} pts / {vtp_poly.GetNumberOfCells()} celdas")
 
         missing = [l for l in self.ordered_labels if l not in converted]
         if missing:
             print("[ERROR] No se pudieron convertir: " + ", ".join(missing))
             return {}
 
-        print("  Conversión VTP terminada. Se abre interfaz del simulador.\n")
+        # print("  Conversión VTP terminada. Se abre interfaz del simulador.\n")
         return converted
 
     def _polydata_points_numpy(self, poly):
@@ -881,10 +881,10 @@ class SpineSimulatorV3:
             pivot, info = self._pivot_from_polydata_by_mode(label, poly)
             self._base_positions[label] = np.array(pivot, dtype=float)
             method = info.get("method", "?") if isinstance(info, dict) else "?"
-            print(f"  Pivot {label}: {method} = "
-                  f"({self._base_positions[label][0]:.3f}, "
-                  f"{self._base_positions[label][1]:.3f}, "
-                  f"{self._base_positions[label][2]:.3f})")
+            # print(f"  Pivot {label}: {method} = "
+            #       f"({self._base_positions[label][0]:.3f}, "
+            #       f"{self._base_positions[label][1]:.3f}, "
+            #       f"{self._base_positions[label][2]:.3f})")
 
     def _create_transforms(self):
         for label in self.ordered_labels:
@@ -991,7 +991,7 @@ class SpineSimulatorV3:
             idx = self._add_fiducial_point(node, pos, point_name)
             self._pivot_point_indices[label] = idx
 
-        print(f"[Pivots] {len(self._pivot_point_indices)} fiduciales amarillos creados en los pivotes estimados del cuerpo vertebral.")
+        # print(f"[Pivots] {len(self._pivot_point_indices)} fiduciales amarillos creados en los pivotes estimados del cuerpo vertebral.")
 
     def _add_fiducial_point(self, node, pos, name):
         """Compatibilidad entre versiones de Slicer para agregar un fiducial."""
@@ -1234,7 +1234,7 @@ class SpineSimulatorV3:
             idx = self._add_fiducial_point(node, disc, self._disc_name_for_label(label))
             self._disc_point_indices[label] = idx
 
-        print(f"[Discos] {len(self._disc_point_indices)} fiduciales celestes Disc_XX_YY creados entre centros de cuerpos vertebrales (glyph 4 mm).")
+        # print(f"[Discos] {len(self._disc_point_indices)} fiduciales celestes Disc_XX_YY creados entre centros de cuerpos vertebrales (glyph 4 mm).")
 
     def _set_disc_fiducials_visible(self, visible):
         self.show_disc_fiducials = bool(visible)
@@ -1646,8 +1646,8 @@ class SpineSimulatorV3:
                     "min_abs_mm": float(info["min_abs_mm"]),
                     "min_signed_mm": float(info["min_signed_mm"]),
                 }
-        if self._collision_baseline_pairs:
-            self._log_event("WARN", f"Colisiones/contactos iniciales ignorados: {len(self._collision_baseline_pairs)} pares.")
+        # if self._collision_baseline_pairs:
+        #     self._log_event("WARN", f"Colisiones/contactos iniciales ignorados: {len(self._collision_baseline_pairs)} pares.")
 
     def _check_collisions_after_move(self, moved_labels):
         if not self.collision_enabled:
@@ -2019,7 +2019,6 @@ class SpineSimulatorV3:
             sphere = vtk.vtkSphereSource()
             sphere.SetCenter(float(pos[0]), float(pos[1]), float(pos[2]))
             sphere.SetRadius((0.45 + 1.0 * float(heat)))
-            print(sphere.GetRadius())
             sphere.SetThetaResolution(8)
             sphere.SetPhiResolution(8)
             sphere.Update()
@@ -2452,6 +2451,41 @@ class SpineSimulatorV3:
         except Exception:
             return None
 
+    def _get_surface_point_cloud_on_vertebra(self, label, position="top"):
+        """Obtiene nube de puntos en la cara superior o inferior de una vértebra."""
+        try:
+            if label not in self.model_nodes:
+                return None
+            poly = self.model_nodes[label].GetPolyData()
+            if not poly or poly.GetNumberOfPoints() == 0:
+                return None
+
+            m = self._label_matrix_to_world(label)
+            pts = self._polydata_points_numpy(poly)
+
+            if position == "top":
+                z_threshold = np.percentile(pts[:, 2], 95)
+                mask = pts[:, 2] >= z_threshold
+            else:  # "bottom"
+                z_threshold = np.percentile(pts[:, 2], 5)
+                mask = pts[:, 2] <= z_threshold
+
+            selected_pts_local = pts[mask]
+            if len(selected_pts_local) < 3:
+                return None
+
+            # Transformar al espacio world
+            selected_pts_world = []
+            for pt_local in selected_pts_local:
+                x = float(m.GetElement(0, 0)) * pt_local[0] + float(m.GetElement(0, 1)) * pt_local[1] + float(m.GetElement(0, 2)) * pt_local[2] + float(m.GetElement(0, 3))
+                y = float(m.GetElement(1, 0)) * pt_local[0] + float(m.GetElement(1, 1)) * pt_local[1] + float(m.GetElement(1, 2)) * pt_local[2] + float(m.GetElement(1, 3))
+                z = float(m.GetElement(2, 0)) * pt_local[0] + float(m.GetElement(2, 1)) * pt_local[1] + float(m.GetElement(2, 2)) * pt_local[2] + float(m.GetElement(2, 3))
+                selected_pts_world.append([x, y, z])
+
+            return np.array(selected_pts_world)
+        except Exception:
+            return None
+
     def _update_angle_markup(self, region, label_sup, label_mid, label_inf, angle_deg):
         """Crea o actualiza angle markup usando los pivot fiducials."""
         try:
@@ -2534,6 +2568,227 @@ class SpineSimulatorV3:
                 self._cobb_c2_c7_label.setText("C2-C7: --°")
         except Exception:
             self._cobb_c2_c7_label.setText("C2-C7: ERROR")
+
+    def _get_endplate_normal(self, label, which="top"):
+        """Obtiene el vector normal del endplato de una vértebra.
+
+        Args:
+            label: nombre de la vértebra (ej. 'C3')
+            which: 'top' para endplato superior, 'bottom' para inferior
+
+        Returns:
+            np.array de 3 elementos (normal proyectada al plano XY, con Z=0)
+            o None si no se puede calcular
+        """
+        try:
+            points = self._get_surface_point_cloud_on_vertebra(label, which)
+            if points is None or len(points) < 3:
+                return None
+
+            points = np.array(points)
+            mean_point = points.mean(axis=0)
+            centered = points - mean_point
+
+            u, s, vt = np.linalg.svd(centered, full_matrices=False)
+            normal = vt[2]
+
+            normal_xy = np.array([normal[0], normal[1], 0.0])
+            norm = np.linalg.norm(normal_xy)
+            if norm > 1e-8:
+                normal_xy = normal_xy / norm
+
+            return normal_xy
+        except Exception:
+            return None
+
+    def _get_vertebra_rotation_angle_z(self, label):
+        """Obtiene el ángulo de rotación alrededor del eje Z (axial) de una vértebra.
+
+        Extrae directamente de la matriz de transformación.
+
+        Args:
+            label: nombre de la vértebra
+
+        Returns:
+            ángulo en grados (float), o None si no se puede calcular
+        """
+        try:
+            m = self._label_matrix_to_world(label)
+
+            r00 = float(m.GetElement(0, 0))
+            r01 = float(m.GetElement(0, 1))
+
+            angle_rad = np.arctan2(r01, r00)
+            angle_deg = np.degrees(angle_rad)
+
+            return angle_deg
+        except Exception:
+            return None
+
+    def _calculate_relative_rotation(self, ref_label, target_label):
+        """Calcula la rotación axial relativa entre dos vértebras.
+
+        Compara los ángulos de rotación Z (alrededor del eje vertical)
+        de las matrices de transformación.
+        Positivo = rotación a la derecha, Negativo = rotación a la izquierda.
+
+        Args:
+            ref_label: vértebra de referencia
+            target_label: vértebra a medir
+
+        Returns:
+            ángulo en grados (float) o None si no se puede calcular
+        """
+        try:
+            angle_ref = self._get_vertebra_rotation_angle_z(ref_label)
+            angle_tgt = self._get_vertebra_rotation_angle_z(target_label)
+
+            if angle_ref is None or angle_tgt is None:
+                return None
+
+            angle_diff = angle_tgt - angle_ref
+            if angle_diff > 180:
+                angle_diff -= 360
+            elif angle_diff < -180:
+                angle_diff += 360
+
+            return angle_diff
+        except Exception:
+            return None
+
+    def _on_generate_rotation_table(self):
+        """Genera una tabla con las rotaciones de todas las vértebras respecto a la anatómica."""
+        try:
+            if not hasattr(self, '_anat_combo'):
+                print("Error: _anat_combo no inicializado")
+                return
+
+            ref_label = str(self._anat_combo.currentText)
+            if not ref_label:
+                print("Error: no hay vértebra anatómica seleccionada")
+                return
+
+            results = []
+            for label in self.ordered_labels:
+                if label == ref_label:
+                    continue
+                rot = self._calculate_relative_rotation(ref_label, label)
+                if rot is not None:
+                    results.append((label, rot))
+
+            self._show_rotation_table(ref_label, results)
+        except Exception as e:
+            import traceback
+            print(f"Error generando tabla de rotaciones: {e}")
+            traceback.print_exc()
+
+    def _on_show_rotation_vectors_toggled(self, checked):
+        """Muestra/oculta los vectores de las dos vértebras que se comparan."""
+        if checked:
+            self._update_comparison_vectors()
+        else:
+            self._hide_comparison_vectors()
+
+    def _update_comparison_vectors(self):
+        """Dibuja líneas VTK que representan la orientación de las dos vértebras que se comparan."""
+        import vtk
+
+        self._hide_comparison_vectors()
+
+        ref_label = str(self._anat_combo.currentText)
+        active_label = self.active_label
+
+        if not ref_label or not active_label:
+            return
+
+        self._comparison_vector_actors = {}
+
+        for label, color_name, color_rgb in [
+            (ref_label, "Referencia", [1, 0, 0]),
+            (active_label, "Activa", [0, 1, 0])
+        ]:
+            angle_z = self._get_vertebra_rotation_angle_z(label)
+            if angle_z is None:
+                continue
+
+            pivot = self._get_current_pivot_world(label)
+            if pivot is None:
+                continue
+
+            pivot = np.array(pivot)
+            angle_rad = np.radians(angle_z)
+            vec = np.array([np.cos(angle_rad), np.sin(angle_rad), 0.0])
+            line_start = pivot
+            line_end = pivot + vec * 40
+
+            points = vtk.vtkPoints()
+            points.InsertNextPoint(line_start)
+            points.InsertNextPoint(line_end)
+
+            line = vtk.vtkLine()
+            line.GetPointIds().SetId(0, 0)
+            line.GetPointIds().SetId(1, 1)
+
+            cells = vtk.vtkCellArray()
+            cells.InsertNextCell(line)
+
+            poly_data = vtk.vtkPolyData()
+            poly_data.SetPoints(points)
+            poly_data.SetLines(cells)
+
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputData(poly_data)
+
+            actor = vtk.vtkActor()
+            actor.SetMapper(mapper)
+            actor.GetProperty().SetColor(*color_rgb)
+            actor.GetProperty().SetLineWidth(4.0)
+
+            self.scene.GetRenderWindow().GetRenderers().GetFirstRenderer().AddActor(actor)
+            self._comparison_vector_actors[label] = actor
+
+    def _hide_comparison_vectors(self):
+        """Oculta los vectores de comparación."""
+        if not hasattr(self, '_comparison_vector_actors'):
+            return
+
+        for actor in self._comparison_vector_actors.values():
+            if actor:
+                self.scene.GetRenderWindow().GetRenderers().GetFirstRenderer().RemoveActor(actor)
+
+        self._comparison_vector_actors = {}
+
+    def _show_rotation_table(self, ref_label, results):
+        """Crea una tabla MRML con las rotaciones relativas."""
+        import slicer
+        import vtk
+
+        table_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode")
+        table_node.SetName(f"Rotación relativa a {ref_label}")
+
+        table = table_node.GetTable()
+
+        col_vertebra = vtk.vtkStringArray()
+        col_vertebra.SetName("Vértebra")
+        col_vertebra.SetNumberOfTuples(len(results))
+        table.AddColumn(col_vertebra)
+
+        col_rotation = vtk.vtkFloatArray()
+        col_rotation.SetName("Rotación (°)")
+        col_rotation.SetNumberOfTuples(len(results))
+        table.AddColumn(col_rotation)
+
+        for i, (label, angle) in enumerate(results):
+            col_vertebra.SetValue(i, label)
+            col_rotation.SetValue(i, angle)
+
+        table_node.Modified()
+
+        slicer.app.layoutManager().setLayout(slicer.vtkMRMLLayoutNode.SlicerLayout3DTableView)
+        slicer.app.applicationLogic().GetSelectionNode().SetReferenceActiveTableID(table_node.GetID())
+        slicer.app.applicationLogic().PropagateTableSelection()
+
+        print(f"Tabla '{table_node.GetName()}' creada y mostrada")
 
     def _cleanup_cobb_annotations(self):
         """Limpia las anotaciones Cobb al cerrar."""
@@ -3444,6 +3699,9 @@ class SpineSimulatorV3:
         self._status_lbl.setStyleSheet("color:#777;font-size:11px")
         root.addWidget(self._status_lbl)
 
+        self._panel_root = root
+        self._rot_table_widget = None
+
         self.active_label = self._combo.currentText
         self._set_color(self.active_label, COLOR_SELECTED)
         self._panel.show()
@@ -3575,6 +3833,8 @@ class SpineSimulatorV3:
         p = self._get_current_pivot_world(label)
         mode_txt = "disco inferior" if self.use_disc_pivots and label in self._motion_pivots else "centro cuerpo"
         self._update_native_transform_interaction()
+        if hasattr(self, '_show_rot_vectors_check') and self._show_rot_vectors_check.isChecked():
+            self._update_comparison_vectors()
         if self._osteotomy_preview_node:
             self._update_osteotomy_preview(label)
         self._update_status(f"Activa: {label} | región: {get_region(label)} | pivot movimiento: {mode_txt} | centro cuerpo RAS: ({p[0]:.1f}, {p[1]:.1f}, {p[2]:.1f})")
@@ -3631,7 +3891,6 @@ class SpineSimulatorV3:
                 self._influence_radius_before_isolation = None
         modo = "solo la vértebra seleccionada" if self.isolated_movement_enabled else f"{self.influence_radius} niveles de alcance"
         self._update_status(f"Movimiento: {modo}")
-        print(modo)
 
     def _on_influence_decay_changed(self, value):
         self.influence_decay = float(value)
@@ -4770,6 +5029,29 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             selLay.addWidget(sim._anchor_label_widget)
             root.addWidget(selBox)
 
+            # ── Medición de rotación relativa ──
+            rotBox = qt.QGroupBox("Rotación relativa")
+            rotLay = qt.QFormLayout(rotBox)
+
+            rotControlLay = qt.QHBoxLayout()
+            rotControlLay.addWidget(qt.QLabel("Vértebra anatómica:"))
+            sim._anat_combo = qt.QComboBox()
+            for l in sim.ordered_labels:
+                sim._anat_combo.addItem(l)
+            sim._anat_combo.setCurrentText("C4")
+            rotControlLay.addWidget(sim._anat_combo)
+            sim._rot_table_btn = qt.QPushButton("Generar tabla")
+            sim._rot_table_btn.clicked.connect(sim._on_generate_rotation_table)
+            rotControlLay.addWidget(sim._rot_table_btn)
+            rotLay.addRow(rotControlLay)
+
+            sim._show_rot_vectors_check = qt.QCheckBox("Mostrar vectores de orientación")
+            sim._show_rot_vectors_check.setChecked(False)
+            sim._show_rot_vectors_check.toggled.connect(sim._on_show_rotation_vectors_toggled)
+            rotLay.addRow(sim._show_rot_vectors_check)
+
+            root.addWidget(rotBox)
+
             # ── Ancla ──
             anchorBox = qt.QGroupBox("Ancla / raíz cinemática")
             anchorLay = qt.QFormLayout(anchorBox)
@@ -5023,6 +5305,9 @@ class SpineSimulatorWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             sim._status_lbl = qt.QLabel("Click en un modelo 3D para seleccionar.")
             sim._status_lbl.setStyleSheet("color:#777;font-size:11px")
             root.addWidget(sim._status_lbl)
+
+            sim._panel_root = root
+            sim._rot_table_widget = None
 
             # En la extensión NO se llama self._panel.show() porque el panel
             # vive dentro del layout del módulo de Slicer, no es una ventana flotante.
